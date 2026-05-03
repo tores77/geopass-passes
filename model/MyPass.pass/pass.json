@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "passTypeIdentifier": "pass.com.umanialabs.geopass",
+  "teamIdentifier": "8JQ5CSFFX9",
+  "organizationName": "GeoPass",
+  "description": "Tarjeta de fidelización",
+  "backgroundColor": "rgb(13, 13, 26)",
+  "foregroundColor": "rgb(240, 240, 240)",
+  "labelColor": "rgb(0, 229, 160)",
+  "storeCard": {
+    "headerFields": [
+      { "key": "nivel", "label": "NIVEL", "value": "Básico" }
+    ],
+    "primaryFields": [
+      { "key": "nombre", "label": "SOCIO", "value": "Cliente" }
+    ],
+    "secondaryFields": [
+      { "key": "puntos", "label": "PUNTOS", "value": "0" }
+    ]
+  }
+}
