@@ -9,16 +9,16 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 
-// ─── Supabase client ──────────────────────────────────────
+// Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// ─── Ruta al modelo del pass ──────────────────────────────
+// Ruta al modelo del pass
 const MODEL_PATH = path.join(__dirname, 'model', 'MyPass.pass');
 
-// ─── Certificados desde variables de entorno en base64 ───
+// Certificados desde variables de entorno en base64
 function getCerts() {
   return {
     signerCert: Buffer.from(process.env.APPLE_CERT_BASE64, 'base64'),
@@ -28,9 +28,7 @@ function getCerts() {
   };
 }
 
-// ════════════════════════════════════════════════════════
-// ENDPOINT: Health check
-// ════════════════════════════════════════════════════════
+// Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -40,10 +38,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ════════════════════════════════════════════════════════
-// ENDPOINT: Crear un nuevo pass
-// POST /passes/create
-// ════════════════════════════════════════════════════════
+// Crear un nuevo pass
 app.post('/passes/create', async (req, res) => {
   try {
     const {
@@ -53,7 +48,10 @@ app.post('/passes/create', async (req, res) => {
       nombre,
       puntos = 0,
       nivel = 'basico',
-      nombre_marca = 'GeoPass™'
+      nombre_marca = 'GeoPass',
+      lat,
+      lng,
+      radio_metros = 150
     } = req.body;
 
     if (!tenant_id || !socio_id || !serial_number || !nombre) {
@@ -63,12 +61,12 @@ app.post('/passes/create', async (req, res) => {
     const authentication_token = uuidv4().replace(/-/g, '');
 
     const nivelTexto = {
-      basico: 'Básico',
+      basico: 'Basico',
       bronce: 'Bronce',
       plata: 'Plata',
       oro: 'Oro',
       vip: 'VIP'
-    }[nivel] || 'Básico';
+    }[nivel] || 'Basico';
 
     // Crear pass desde el modelo en disco
     const pass = await PKPass.from(
@@ -79,11 +77,22 @@ app.post('/passes/create', async (req, res) => {
       {
         serialNumber: serial_number,
         authenticationToken: authentication_token,
-        webServiceURL: `${process.env.RAILWAY_PUBLIC_URL}/wallet/`
+        webServiceURL: process.env.RAILWAY_PUBLIC_URL + '/wallet/'
       }
     );
 
-    // Actualizar campos dinámicos
+    // Añadir geopush si hay coordenadas
+    if (lat && lng) {
+      pass.props.locations = [
+        {
+          latitude: parseFloat(lat),
+          longitude: parseFloat(lng),
+          relevantText: nombre_marca + ' te espera'
+        }
+      ];
+    }
+
+    // Actualizar campos dinamicos
     pass.headerFields[0].value = nivelTexto;
     pass.primaryFields[0].label = nombre_marca;
     pass.primaryFields[0].value = nombre;
@@ -104,7 +113,7 @@ app.post('/passes/create', async (req, res) => {
 
     res.set({
       'Content-Type': 'application/vnd.apple.pkpass',
-      'Content-Disposition': `attachment; filename="${serial_number}.pkpass"`,
+      'Content-Disposition': 'attachment; filename="' + serial_number + '.pkpass"',
       'Content-Length': buffer.length
     });
 
@@ -119,10 +128,7 @@ app.post('/passes/create', async (req, res) => {
   }
 });
 
-// ════════════════════════════════════════════════════════
-// ENDPOINT: Actualizar pass existente
-// POST /passes/:serial_number/update
-// ════════════════════════════════════════════════════════
+// Actualizar pass existente
 app.post('/passes/:serial_number/update', async (req, res) => {
   try {
     const { serial_number } = req.params;
@@ -147,37 +153,29 @@ app.post('/passes/:serial_number/update', async (req, res) => {
   }
 });
 
-// ════════════════════════════════════════════════════════
-// ENDPOINTS APPLE WALLET WEB SERVICE
-// ════════════════════════════════════════════════════════
-app.post('/wallet/v1/devices/:deviceId/registrations/:passTypeId/:serialNumber',
-  async (req, res) => {
-    res.status(201).json({ status: 'registered' });
-  }
-);
+// Apple Wallet Web Service endpoints
+app.post('/wallet/v1/devices/:deviceId/registrations/:passTypeId/:serialNumber', async (req, res) => {
+  res.status(201).json({ status: 'registered' });
+});
 
-app.get('/wallet/v1/devices/:deviceId/registrations/:passTypeId',
-  async (req, res) => {
-    res.json({ serialNumbers: [], lastUpdated: new Date().toISOString() });
-  }
-);
+app.get('/wallet/v1/devices/:deviceId/registrations/:passTypeId', async (req, res) => {
+  res.json({ serialNumbers: [], lastUpdated: new Date().toISOString() });
+});
 
-app.delete('/wallet/v1/devices/:deviceId/registrations/:passTypeId/:serialNumber',
-  async (req, res) => {
-    res.status(200).json({ status: 'unregistered' });
-  }
-);
+app.delete('/wallet/v1/devices/:deviceId/registrations/:passTypeId/:serialNumber', async (req, res) => {
+  res.status(200).json({ status: 'unregistered' });
+});
 
 app.post('/wallet/v1/log', (req, res) => {
   console.log('Apple Wallet log:', JSON.stringify(req.body));
   res.status(200).json({ status: 'logged' });
 });
 
-// ─── Arrancar servidor ───────────────────────────────────
+// Arrancar servidor
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`✅ GeoPass passes service running on port ${PORT}`);
-  console.log(`   Pass Type ID: ${process.env.APPLE_PASS_TYPE_ID}`);
-  console.log(`   Team ID: ${process.env.APPLE_TEAM_ID}`);
-  console.log(`   Model path: ${MODEL_PATH}`);
+  console.log('GeoPass passes service running on port ' + PORT);
+  console.log('Pass Type ID: ' + process.env.APPLE_PASS_TYPE_ID);
+  console.log('Team ID: ' + process.env.APPLE_TEAM_ID);
+  console.log('Model path: ' + MODEL_PATH);
 });
