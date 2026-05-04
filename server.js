@@ -26,7 +26,6 @@ function getCerts() {
   };
 }
 
-// Base pass.json sin locations
 const BASE_PASS_JSON = {
   formatVersion: 1,
   passTypeIdentifier: 'pass.com.umanialabs.geopass',
@@ -45,6 +44,23 @@ const BASE_PASS_JSON = {
     ],
     secondaryFields: [
       { key: 'puntos', label: 'PUNTOS', value: '0' }
+    ],
+    backFields: [
+      {
+        key: 'ubicacion',
+        label: 'ACTIVAR NOTIFICACIONES DE PROXIMIDAD',
+        value: 'Ve a Ajustes > Cartera > Permitir acceso a ubicacion > Cuando se use la app. Activa tambien Ubicacion exacta. Al acercarte al local recibiras una notificacion automatica en tu pantalla de bloqueo.'
+      },
+      {
+        key: 'puntos_info',
+        label: 'COMO GANAR PUNTOS',
+        value: 'Acumulas puntos con cada visita al local. Consulta tu saldo y nivel en el anverso de esta tarjeta en cualquier momento.'
+      },
+      {
+        key: 'web',
+        label: 'MAS INFORMACION',
+        value: 'geopass.umanialabs.com'
+      }
     ]
   }
 };
@@ -86,11 +102,16 @@ app.post('/passes/create', async (req, res) => {
       vip: 'VIP'
     }[nivel] || 'Basico';
 
-    // Construir pass.json con locations si hay coordenadas
+    // Construir pass.json dinamico
     const passJsonData = JSON.parse(JSON.stringify(BASE_PASS_JSON));
     passJsonData.organizationName = nombre_marca;
     passJsonData.description = 'Tarjeta de fidelizacion ' + nombre_marca;
 
+    // Actualizar backFields con nombre de marca
+    passJsonData.storeCard.backFields[0].value =
+      'Ve a Ajustes > Cartera > Permitir acceso a ubicacion > Cuando se use la app. Activa tambien Ubicacion exacta. Al acercarte a ' + nombre_marca + ' recibiras una notificacion automatica.';
+
+    // Añadir geopush si hay coordenadas
     if (lat && lng) {
       passJsonData.locations = [
         {
@@ -102,10 +123,9 @@ app.post('/passes/create', async (req, res) => {
       console.log('Geopush location added: lat=' + lat + ' lng=' + lng);
     }
 
-    // Escribir pass.json modificado en disco
+    // Escribir pass.json en disco
     fs.writeFileSync(PASS_JSON_PATH, JSON.stringify(passJsonData, null, 2));
 
-    // Crear pass desde el modelo en disco
     const pass = await PKPass.from(
       {
         model: MODEL_PATH,
@@ -124,13 +144,12 @@ app.post('/passes/create', async (req, res) => {
     pass.primaryFields[0].value = nombre;
     pass.secondaryFields[0].value = puntos.toString();
 
-    // Generar buffer antes de restaurar pass.json
     const buffer = await pass.getAsBuffer();
 
     // Restaurar pass.json original
     fs.writeFileSync(PASS_JSON_PATH, JSON.stringify(BASE_PASS_JSON, null, 2));
 
-    // Actualizar authentication_token en Supabase
+    // Actualizar en Supabase
     await supabase
       .from('passes')
       .update({
@@ -150,7 +169,6 @@ app.post('/passes/create', async (req, res) => {
 
   } catch (error) {
     console.error('Error creando pass:', error.message);
-    // Restaurar pass.json original en caso de error
     try {
       fs.writeFileSync(PASS_JSON_PATH, JSON.stringify(BASE_PASS_JSON, null, 2));
     } catch (e) {}
