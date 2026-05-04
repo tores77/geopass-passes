@@ -15,6 +15,7 @@ const supabase = createClient(
 );
 
 const MODEL_PATH = path.join(__dirname, 'model', 'MyPass.pass');
+const PASS_JSON_PATH = path.join(MODEL_PATH, 'pass.json');
 
 function getCerts() {
   return {
@@ -25,43 +26,28 @@ function getCerts() {
   };
 }
 
-// Genera el pass.json dinamico con locations si hay coordenadas
-function buildPassJson(nombre_marca, lat, lng) {
-  const passJson = {
-    formatVersion: 1,
-    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
-    teamIdentifier: process.env.APPLE_TEAM_ID,
-    organizationName: nombre_marca || 'GeoPass',
-    description: 'Tarjeta de fidelizacion ' + (nombre_marca || 'GeoPass'),
-    backgroundColor: 'rgb(13, 13, 26)',
-    foregroundColor: 'rgb(240, 240, 240)',
-    labelColor: 'rgb(0, 229, 160)',
-    storeCard: {
-      headerFields: [
-        { key: 'nivel', label: 'NIVEL', value: 'Basico' }
-      ],
-      primaryFields: [
-        { key: 'nombre', label: nombre_marca || 'GeoPass', value: 'Socio' }
-      ],
-      secondaryFields: [
-        { key: 'puntos', label: 'PUNTOS', value: '0' }
-      ]
-    }
-  };
-
-  if (lat && lng) {
-    passJson.locations = [
-      {
-        latitude: parseFloat(lat),
-        longitude: parseFloat(lng),
-        relevantText: (nombre_marca || 'GeoPass') + ' te espera'
-      }
-    ];
-    console.log('Geopush location added: lat=' + lat + ' lng=' + lng);
+// Base pass.json sin locations
+const BASE_PASS_JSON = {
+  formatVersion: 1,
+  passTypeIdentifier: 'pass.com.umanialabs.geopass',
+  teamIdentifier: '8JQ5CSFFX9',
+  organizationName: 'GeoPass',
+  description: 'Tarjeta de fidelizacion',
+  backgroundColor: 'rgb(13, 13, 26)',
+  foregroundColor: 'rgb(240, 240, 240)',
+  labelColor: 'rgb(0, 229, 160)',
+  storeCard: {
+    headerFields: [
+      { key: 'nivel', label: 'NIVEL', value: 'Basico' }
+    ],
+    primaryFields: [
+      { key: 'nombre', label: 'GeoPass', value: 'Socio' }
+    ],
+    secondaryFields: [
+      { key: 'puntos', label: 'PUNTOS', value: '0' }
+    ]
   }
-
-  return passJson;
-}
+};
 
 app.get('/health', (req, res) => {
   res.json({
@@ -100,25 +86,29 @@ app.post('/passes/create', async (req, res) => {
       vip: 'VIP'
     }[nivel] || 'Basico';
 
-    // Leer archivos del modelo
-    const iconBuffer = fs.readFileSync(path.join(MODEL_PATH, 'icon.png'));
-    const icon2xBuffer = fs.readFileSync(path.join(MODEL_PATH, 'icon@2x.png'));
-    const logoBuffer = fs.readFileSync(path.join(MODEL_PATH, 'logo.png'));
-    const logo2xBuffer = fs.readFileSync(path.join(MODEL_PATH, 'logo@2x.png'));
+    // Construir pass.json con locations si hay coordenadas
+    const passJsonData = JSON.parse(JSON.stringify(BASE_PASS_JSON));
+    passJsonData.organizationName = nombre_marca;
+    passJsonData.description = 'Tarjeta de fidelizacion ' + nombre_marca;
 
-    // Construir pass.json dinamico con locations
-    const passJsonData = buildPassJson(nombre_marca, lat, lng);
+    if (lat && lng) {
+      passJsonData.locations = [
+        {
+          latitude: parseFloat(lat),
+          longitude: parseFloat(lng),
+          relevantText: nombre_marca + ' te espera'
+        }
+      ];
+      console.log('Geopush location added: lat=' + lat + ' lng=' + lng);
+    }
 
-    // Crear pass desde buffers en memoria
+    // Escribir pass.json modificado en disco
+    fs.writeFileSync(PASS_JSON_PATH, JSON.stringify(passJsonData, null, 2));
+
+    // Crear pass desde el modelo en disco
     const pass = await PKPass.from(
       {
-        model: {
-          'pass.json': Buffer.from(JSON.stringify(passJsonData)),
-          'icon.png': iconBuffer,
-          'icon@2x.png': icon2xBuffer,
-          'logo.png': logoBuffer,
-          'logo@2x.png': logo2xBuffer
-        },
+        model: MODEL_PATH,
         certificates: getCerts()
       },
       {
@@ -134,6 +124,12 @@ app.post('/passes/create', async (req, res) => {
     pass.primaryFields[0].value = nombre;
     pass.secondaryFields[0].value = puntos.toString();
 
+    // Generar buffer antes de restaurar pass.json
+    const buffer = await pass.getAsBuffer();
+
+    // Restaurar pass.json original
+    fs.writeFileSync(PASS_JSON_PATH, JSON.stringify(BASE_PASS_JSON, null, 2));
+
     // Actualizar authentication_token en Supabase
     await supabase
       .from('passes')
@@ -143,8 +139,6 @@ app.post('/passes/create', async (req, res) => {
       })
       .eq('serial_number', serial_number)
       .eq('tenant_id', tenant_id);
-
-    const buffer = await pass.getAsBuffer();
 
     res.set({
       'Content-Type': 'application/vnd.apple.pkpass',
@@ -156,6 +150,10 @@ app.post('/passes/create', async (req, res) => {
 
   } catch (error) {
     console.error('Error creando pass:', error.message);
+    // Restaurar pass.json original en caso de error
+    try {
+      fs.writeFileSync(PASS_JSON_PATH, JSON.stringify(BASE_PASS_JSON, null, 2));
+    } catch (e) {}
     res.status(500).json({
       error: 'Error generando el pass',
       detail: error.message
@@ -207,7 +205,7 @@ app.post('/wallet/v1/log', (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log('GeoPass passes service running on port ' + PORT);
-  console.log('Pass Type ID: ' + process.env.APPLE_PASS_TYPE_ID);
-  console.log('Team ID: ' + process.env.APPLE_TEAM_ID);
+  console.log('Pass Type ID: ' + (process.env.APPLE_PASS_TYPE_ID || 'pass.com.umanialabs.geopass'));
+  console.log('Team ID: ' + (process.env.APPLE_TEAM_ID || '8JQ5CSFFX9'));
   console.log('Model path: ' + MODEL_PATH);
 });
