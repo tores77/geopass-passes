@@ -9,16 +9,13 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 
-// Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// Ruta al modelo del pass
 const MODEL_PATH = path.join(__dirname, 'model', 'MyPass.pass');
 
-// Certificados desde variables de entorno en base64
 function getCerts() {
   return {
     signerCert: Buffer.from(process.env.APPLE_CERT_BASE64, 'base64'),
@@ -28,7 +25,6 @@ function getCerts() {
   };
 }
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -38,7 +34,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Crear un nuevo pass
 app.post('/passes/create', async (req, res) => {
   try {
     const {
@@ -68,29 +63,31 @@ app.post('/passes/create', async (req, res) => {
       vip: 'VIP'
     }[nivel] || 'Basico';
 
-    // Crear pass desde el modelo en disco
-    const pass = await PKPass.from(
-      {
-        model: MODEL_PATH,
-        certificates: getCerts()
-      },
-      {
-        serialNumber: serial_number,
-        authenticationToken: authentication_token,
-        webServiceURL: process.env.RAILWAY_PUBLIC_URL + '/wallet/'
-      }
-    );
+    // Construir overrides — incluir locations si hay coordenadas
+    const overrides = {
+      serialNumber: serial_number,
+      authenticationToken: authentication_token,
+      webServiceURL: process.env.RAILWAY_PUBLIC_URL + '/wallet/'
+    };
 
-    // Añadir geopush si hay coordenadas
     if (lat && lng) {
-      pass.props.locations = [
+      overrides.locations = [
         {
           latitude: parseFloat(lat),
           longitude: parseFloat(lng),
           relevantText: nombre_marca + ' te espera'
         }
       ];
+      console.log('Geopush location added: ' + lat + ',' + lng);
     }
+
+    const pass = await PKPass.from(
+      {
+        model: MODEL_PATH,
+        certificates: getCerts()
+      },
+      overrides
+    );
 
     // Actualizar campos dinamicos
     pass.headerFields[0].value = nivelTexto;
@@ -108,7 +105,6 @@ app.post('/passes/create', async (req, res) => {
       .eq('serial_number', serial_number)
       .eq('tenant_id', tenant_id);
 
-    // Generar y devolver el .pkpass
     const buffer = await pass.getAsBuffer();
 
     res.set({
@@ -128,11 +124,10 @@ app.post('/passes/create', async (req, res) => {
   }
 });
 
-// Actualizar pass existente
 app.post('/passes/:serial_number/update', async (req, res) => {
   try {
     const { serial_number } = req.params;
-    const { puntos, nivel, mensaje } = req.body;
+    const { puntos, nivel } = req.body;
 
     await supabase
       .from('passes')
@@ -153,7 +148,6 @@ app.post('/passes/:serial_number/update', async (req, res) => {
   }
 });
 
-// Apple Wallet Web Service endpoints
 app.post('/wallet/v1/devices/:deviceId/registrations/:passTypeId/:serialNumber', async (req, res) => {
   res.status(201).json({ status: 'registered' });
 });
@@ -171,7 +165,6 @@ app.post('/wallet/v1/log', (req, res) => {
   res.status(200).json({ status: 'logged' });
 });
 
-// Arrancar servidor
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log('GeoPass passes service running on port ' + PORT);
