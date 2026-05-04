@@ -117,8 +117,9 @@ app.post('/passes/create', async (req, res) => {
         {
           latitude: parseFloat(lat),
           longitude: parseFloat(lng),
-          relevantText: nombre_marca + ' te espera'
-        }
+          relevantText: nombre_marca + ' te espera',
+          maxDistance: 150
+       }
       ];
       console.log('Geopush location added: lat=' + lat + ' lng=' + lng);
     }
