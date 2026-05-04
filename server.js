@@ -1,11 +1,3 @@
-cd ~/Desktop/geopass-passes
-
-
-
-
-
-
-
 const express = require('express');
 const { PKPass } = require('passkit-generator');
 const { createClient } = require('@supabase/supabase-js');
