@@ -25,6 +25,44 @@ function getCerts() {
   };
 }
 
+// Genera el pass.json dinamico con locations si hay coordenadas
+function buildPassJson(nombre_marca, lat, lng) {
+  const passJson = {
+    formatVersion: 1,
+    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+    teamIdentifier: process.env.APPLE_TEAM_ID,
+    organizationName: nombre_marca || 'GeoPass',
+    description: 'Tarjeta de fidelizacion ' + (nombre_marca || 'GeoPass'),
+    backgroundColor: 'rgb(13, 13, 26)',
+    foregroundColor: 'rgb(240, 240, 240)',
+    labelColor: 'rgb(0, 229, 160)',
+    storeCard: {
+      headerFields: [
+        { key: 'nivel', label: 'NIVEL', value: 'Basico' }
+      ],
+      primaryFields: [
+        { key: 'nombre', label: nombre_marca || 'GeoPass', value: 'Socio' }
+      ],
+      secondaryFields: [
+        { key: 'puntos', label: 'PUNTOS', value: '0' }
+      ]
+    }
+  };
+
+  if (lat && lng) {
+    passJson.locations = [
+      {
+        latitude: parseFloat(lat),
+        longitude: parseFloat(lng),
+        relevantText: (nombre_marca || 'GeoPass') + ' te espera'
+      }
+    ];
+    console.log('Geopush location added: lat=' + lat + ' lng=' + lng);
+  }
+
+  return passJson;
+}
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -45,8 +83,7 @@ app.post('/passes/create', async (req, res) => {
       nivel = 'basico',
       nombre_marca = 'GeoPass',
       lat,
-      lng,
-      radio_metros = 150
+      lng
     } = req.body;
 
     if (!tenant_id || !socio_id || !serial_number || !nombre) {
@@ -63,30 +100,32 @@ app.post('/passes/create', async (req, res) => {
       vip: 'VIP'
     }[nivel] || 'Basico';
 
-    // Construir overrides — incluir locations si hay coordenadas
-    const overrides = {
-      serialNumber: serial_number,
-      authenticationToken: authentication_token,
-      webServiceURL: process.env.RAILWAY_PUBLIC_URL + '/wallet/'
-    };
+    // Leer archivos del modelo
+    const iconBuffer = fs.readFileSync(path.join(MODEL_PATH, 'icon.png'));
+    const icon2xBuffer = fs.readFileSync(path.join(MODEL_PATH, 'icon@2x.png'));
+    const logoBuffer = fs.readFileSync(path.join(MODEL_PATH, 'logo.png'));
+    const logo2xBuffer = fs.readFileSync(path.join(MODEL_PATH, 'logo@2x.png'));
 
-    if (lat && lng) {
-      overrides.locations = [
-        {
-          latitude: parseFloat(lat),
-          longitude: parseFloat(lng),
-          relevantText: nombre_marca + ' te espera'
-        }
-      ];
-      console.log('Geopush location added: ' + lat + ',' + lng);
-    }
+    // Construir pass.json dinamico con locations
+    const passJsonData = buildPassJson(nombre_marca, lat, lng);
 
+    // Crear pass desde buffers en memoria
     const pass = await PKPass.from(
       {
-        model: MODEL_PATH,
+        model: {
+          'pass.json': Buffer.from(JSON.stringify(passJsonData)),
+          'icon.png': iconBuffer,
+          'icon@2x.png': icon2xBuffer,
+          'logo.png': logoBuffer,
+          'logo@2x.png': logo2xBuffer
+        },
         certificates: getCerts()
       },
-      overrides
+      {
+        serialNumber: serial_number,
+        authenticationToken: authentication_token,
+        webServiceURL: process.env.RAILWAY_PUBLIC_URL + '/wallet/'
+      }
     );
 
     // Actualizar campos dinamicos
