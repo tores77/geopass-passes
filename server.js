@@ -49,7 +49,12 @@ const BASE_PASS_JSON = {
       {
         key: 'ubicacion',
         label: 'ACTIVAR NOTIFICACIONES DE PROXIMIDAD',
-        value: 'Ve a Ajustes > Cartera > Permitir acceso a ubicacion > Cuando se use la app. Activa tambien Ubicacion exacta. Al acercarte al local recibiras una notificacion automatica en tu pantalla de bloqueo.'
+        value: 'Ve a Ajustes > Cartera > Permitir acceso a ubicacion > Cuando se use la app. Activa tambien Ubicacion exacta. Cuando pases cerca del local recibiras una notificacion automatica en tu pantalla de bloqueo.'
+      },
+      {
+        key: 'notificaciones',
+        label: 'SI LAS NOTIFICACIONES NO DESAPARECEN',
+        value: 'Ve a Ajustes > Notificaciones > Cartera > desactiva Notificaciones importantes. Esto hara que las alertas de proximidad se comporten de forma normal.'
       },
       {
         key: 'puntos_info',
@@ -107,9 +112,9 @@ app.post('/passes/create', async (req, res) => {
     passJsonData.organizationName = nombre_marca;
     passJsonData.description = 'Tarjeta de fidelizacion ' + nombre_marca;
 
-    // Actualizar backFields con nombre de marca
+    // Personalizar instrucciones con nombre de marca
     passJsonData.storeCard.backFields[0].value =
-      'Ve a Ajustes > Cartera > Permitir acceso a ubicacion > Cuando se use la app. Activa tambien Ubicacion exacta. Al acercarte a ' + nombre_marca + ' recibiras una notificacion automatica.';
+      'Ve a Ajustes > Cartera > Permitir acceso a ubicacion > Cuando se use la app. Activa tambien Ubicacion exacta. Cuando pases cerca de ' + nombre_marca + ' recibiras una notificacion automatica.';
 
     // Añadir geopush si hay coordenadas
     if (lat && lng) {
@@ -119,9 +124,9 @@ app.post('/passes/create', async (req, res) => {
           longitude: parseFloat(lng),
           relevantText: nombre_marca + ' te espera',
           maxDistance: 150
-       }
+        }
       ];
-      console.log('Geopush location added: lat=' + lat + ' lng=' + lng);
+      console.log('Geopush location added: lat=' + lat + ' lng=' + lng + ' maxDistance=150m');
     }
 
     // Escribir pass.json en disco
